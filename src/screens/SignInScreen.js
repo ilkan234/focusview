@@ -15,12 +15,14 @@ import { colors, spacing } from '../theme';
 
 WebBrowser.maybeCompleteAuthSession();
 
+const isConfigured = (id) => !!id && !id.startsWith('REPLACE_WITH_');
+
 export default function SignInScreen({ navigation }) {
   const [busy, setBusy] = useState(false);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    webClientId: GOOGLE_WEB_CLIENT_ID,
+    ...(isConfigured(GOOGLE_WEB_CLIENT_ID) && { webClientId: GOOGLE_WEB_CLIENT_ID }),
+    ...(isConfigured(GOOGLE_ANDROID_CLIENT_ID) && { androidClientId: GOOGLE_ANDROID_CLIENT_ID }),
     scopes: YOUTUBE_SCOPES,
   });
 
