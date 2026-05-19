@@ -45,10 +45,9 @@
 - [ ] **YouTube Data API v3'ü etkinleştir** (APIs & Services → Library)
 - [ ] **OAuth consent screen** — External, app adı focusview, scope `youtube.readonly`, kendi email'ini test user olarak ekle
 - [ ] **Web OAuth Client oluştur** — authorized redirect URI: `https://auth.expo.io/@<expo-kullanici-adin>/focusview`
-- [ ] **Android OAuth Client oluştur** *(opsiyonel — sadece Expo Go ile geliştirceksen atlanabilir)*:
-  - Package: `com.ilkan234.focusview`
-  - SHA-1: `npx eas credentials` veya `keytool` ile
-- [ ] **`src/config.js`'e gerçek Web + Android Client ID'lerini yapıştır**
+- [x] ~~Android OAuth Client~~ — Expo Go ile geliştirme için **gerekmiyor**, kod tabanından çıkarıldı. Standalone APK çıkarınca [SETUP_OAUTH.md § 5](SETUP_OAUTH.md#5-android-client-id-opsiyonel--sadece-standalone-apk-için)
+- [x] **`src/config.js`'e Web Client ID yapıştırıldı**
+- [ ] **GCP Web Client'a redirect URI eklendi mi**: `https://auth.expo.io/@ilkan1/focusview`
 - [ ] **Gerçek cihazda smoke test**:
   - [ ] Sign-in akışı → token kaydı doğru mu
   - [ ] Bir segment oluştur → feed gerçekten dolu mu

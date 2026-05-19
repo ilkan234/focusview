@@ -5,24 +5,17 @@ import {
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import {
-  GOOGLE_WEB_CLIENT_ID,
-  GOOGLE_ANDROID_CLIENT_ID,
-  YOUTUBE_SCOPES,
-} from '../config';
+import { GOOGLE_WEB_CLIENT_ID, YOUTUBE_SCOPES } from '../config';
 import { saveToken } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const isConfigured = (id) => !!id && !id.startsWith('REPLACE_WITH_');
-
 export default function SignInScreen({ navigation }) {
   const [busy, setBusy] = useState(false);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
-    ...(isConfigured(GOOGLE_WEB_CLIENT_ID) && { webClientId: GOOGLE_WEB_CLIENT_ID }),
-    ...(isConfigured(GOOGLE_ANDROID_CLIENT_ID) && { androidClientId: GOOGLE_ANDROID_CLIENT_ID }),
+    webClientId: GOOGLE_WEB_CLIENT_ID,
     scopes: YOUTUBE_SCOPES,
   });
 

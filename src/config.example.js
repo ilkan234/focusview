@@ -1,10 +1,10 @@
 // Template — copy to `src/config.js` and fill in real values.
 // `src/config.js` is gitignored so secrets stay local.
 //
-// In Expo Go (development) the Web client ID is what gets used via the auth proxy.
-// In a standalone Android build, the Android client ID is used.
+// Expo Go (development) uses the Web Client ID via Google's auth proxy.
+// For a standalone Android build you'll also need an Android Client ID
+// (see docs/SETUP_OAUTH.md § 5).
 export const GOOGLE_WEB_CLIENT_ID = 'REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com';
-export const GOOGLE_ANDROID_CLIENT_ID = 'REPLACE_WITH_ANDROID_CLIENT_ID.apps.googleusercontent.com';
 
 export const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.readonly'];
 

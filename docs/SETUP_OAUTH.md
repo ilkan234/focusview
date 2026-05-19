@@ -1,6 +1,6 @@
 # OAuth & YouTube API Kurulum Rehberi
 
-Bu adımların hepsi **Google Cloud Console** ve **terminal** üzerinde yapılır. Sonunda iki ID elde edeceksin — bunları `src/config.js`'e yapıştıracaksın.
+Bu adımların hepsi **Google Cloud Console** ve **terminal** üzerinde yapılır. Sonunda **Web Client ID** elde edeceksin — bunu `src/config.js`'e yapıştıracaksın. *(Android Client ID sadece standalone APK çıkardığında lazım, Expo Go ile geliştirme için gerek yok.)*
 
 > **Önemli**: `src/config.js` artık `.gitignore`'da. Gerçek ID'lerini koyduğunda commit'e dahil olmayacak. Kurulum için template'i kopyala:
 > ```bash
@@ -69,9 +69,11 @@ OAuth Platform
 
 Bunu `src/config.js`'de `GOOGLE_WEB_CLIENT_ID` değişkenine yapıştır.
 
-## 5. Android Client ID (standalone APK için)
+## 5. Android Client ID (opsiyonel — sadece standalone APK için)
 
-> Eğer sadece Expo Go ile geliştireceksen bu adımı atlayabilirsin. Ama development build / production APK yapacaksan zorunlu.
+> **Expo Go ile geliştirme yapıyorsan bu bölümü atla.** Bu kısım ileride gerçek bir APK build'i (development build veya production APK) çıkardığında lazım olacak. O zamana kadar `GOOGLE_ANDROID_CLIENT_ID` config'de hiç yer almasın.
+
+> Android Client'ı eklediğinde [src/config.js](../src/config.js) ve [src/screens/SignInScreen.js](../src/screens/SignInScreen.js) içine `GOOGLE_ANDROID_CLIENT_ID` export'unu ve `Google.useAuthRequest`'in `androidClientId` argümanını geri eklemen gerekecek.
 
 ### 5.1 SHA-1 fingerprint'ini al
 
