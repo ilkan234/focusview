@@ -21,25 +21,43 @@ Bu adımların hepsi **Google Cloud Console** ve **terminal** üzerinde yapılı
 1. Sol menü → **"APIs & Services" → "Library"**.
 2. Arama: `YouTube Data API v3` → **Enable**.
 
-## 3. OAuth consent screen
+## 3. OAuth consent screen (yeni UI — 2025)
 
-1. Sol menü → **"APIs & Services" → "OAuth consent screen"**.
-2. User Type: **External** → Create.
-3. App information:
-   - App name: `focusview`
-   - User support email: kendi email'in
-   - Developer contact: kendi email'in
-   - Logo / domain alanlarını boş bırakabilirsin
-4. **Scopes** ekranı → "Add or Remove Scopes" → manuel olarak şunu ekle:
-   ```
-   https://www.googleapis.com/auth/youtube.readonly
-   ```
-5. **Test users** ekranı → "Add Users" → kendi Google email'ini ekle. (App "Testing" modundayken sadece eklediğin test kullanıcıları sign-in olabilir; production'a geçmek için Google'ın verification sürecini geçmen lazım, MVP için Testing modu yeterli.)
-6. Save & Continue → bitir.
+Google bu sayfayı tek wizard'dan ayrı sekmelere böldü. Sol menü → **"APIs & Services" → "OAuth consent screen"** dediğinde "OAuth Overview" dashboard'una düşersin. **Soldaki alt menüde** şu sekmeler var:
+
+```
+OAuth Platform
+├── Overview        ← dashboard / metrikler
+├── Branding        ← (3.1) app adı, logo, support email
+├── Audience        ← (3.2) USER TYPE: EXTERNAL + Test users
+├── Clients         ← (§ 4 ve § 5) OAuth Client ID'leri
+└── Data Access     ← (3.3) youtube.readonly scope
+```
+
+### 3.1 Branding
+- App name: `focusview`
+- User support email: kendi email'in
+- Developer contact info: kendi email'in
+- Logo / domain alanlarını boş bırakabilirsin
+- **Save**
+
+### 3.2 Audience
+- User type: **External** (bu MVP için doğru seçim — Internal sadece Google Workspace organizasyonu içinse)
+- External seçince **Test users** bölümü açılır → "+ Add users" → kendi Gmail adresini ekle. App "Testing" modundayken **sadece eklediğin test kullanıcıları** sign-in olabilir; bu MVP için yeterli, production'a verification başvurusu olmadan koymak gerekmez.
+- **Save**
+
+### 3.3 Data Access
+- "Add or remove scopes" → arama kutusuna yapıştır:
+  ```
+  https://www.googleapis.com/auth/youtube.readonly
+  ```
+- Seç → Update → **Save**
+
+> Eski wizard'ı bekliyorsan: yok, Google sildi. Sıralama önemli değil, üç sekmeyi de doldurman yeterli.
 
 ## 4. Web Client ID (Expo Go için kritik)
 
-1. **"APIs & Services" → "Credentials" → "+ Create Credentials" → "OAuth client ID"**.
+1. Sol menüden **OAuth Platform → Clients → "+ Create Client"** *(eski "APIs & Services → Credentials" sayfası hâlâ çalışır, ikisi de aynı yere gider)*.
 2. Application type: **Web application**.
 3. Name: `focusview-web`.
 4. **Authorized redirect URIs** → şunu ekle (Expo username'ini değiştir):
@@ -74,7 +92,7 @@ keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -sto
 
 ### 5.2 Android client oluştur
 
-1. **Credentials → "+ Create Credentials" → "OAuth client ID"**.
+1. **OAuth Platform → Clients → "+ Create Client"**.
 2. Application type: **Android**.
 3. Name: `focusview-android`.
 4. Package name: `com.ilkan234.focusview` *(app.json'da bu yazıyor, değiştireceksen ikisini de güncelle)*.
