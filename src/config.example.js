@@ -6,6 +6,12 @@
 // (see docs/SETUP_OAUTH.md § 5).
 export const GOOGLE_WEB_CLIENT_ID = 'REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com';
 
+// Must match exactly one of the Authorized redirect URIs on the Web OAuth
+// client in GCP. The URL is just a string Google redirects to — we
+// intercept it inside our WebView; the page on the other end is never loaded.
+// Default is the legacy Expo auth proxy URL with your Expo username slotted in.
+export const OAUTH_REDIRECT_URI = 'https://auth.expo.io/@YOUR_EXPO_USERNAME/focusview';
+
 export const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.readonly'];
 
 // Anything shorter than this is treated as a Short and dropped.

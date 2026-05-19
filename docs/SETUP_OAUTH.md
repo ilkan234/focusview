@@ -2,6 +2,16 @@
 
 Bu adımların hepsi **Google Cloud Console** ve **terminal** üzerinde yapılır. Sonunda **Web Client ID** elde edeceksin — bunu `src/config.js`'e yapıştıracaksın. *(Android Client ID sadece standalone APK çıkardığında lazım, Expo Go ile geliştirme için gerek yok.)*
 
+## Neden WebView ile manuel OAuth?
+
+Expo SDK 50'den itibaren `expo-auth-session/providers/google` Android'de **mutlaka** `androidClientId` istiyor — ki bu da ancak standalone bir build varsa anlamlı (Expo Go'nun paket adı `host.exp.exponent` ve Google bu paket adını yeni client'lar için kabul etmiyor). Yani **Expo Go + Google.useAuthRequest** kombinasyonu artık geçmiyor.
+
+Çözüm: [src/screens/SignInScreen.js](../src/screens/SignInScreen.js) Google'ın OAuth URL'sini bir `WebView` modal'ında açıyor, kullanıcı izin verdikten sonra Google'ın redirect ettiği URL'i WebView içinde yakalayıp fragment'taki `access_token`'ı çekiyor. Standart implicit-flow.
+
+Bu yüzden:
+- Sadece **Web Client ID** yeterli (Android Client'a gerek yok).
+- Redirect URI sadece bir **string** — Google'ın bilmesi gereken o, hedef sayfanın gerçekten yüklenmesine gerek yok (biz WebView'da intercept ediyoruz).
+
 > **Önemli**: `src/config.js` artık `.gitignore`'da. Gerçek ID'lerini koyduğunda commit'e dahil olmayacak. Kurulum için template'i kopyala:
 > ```bash
 > cp src/config.example.js src/config.js

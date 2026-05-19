@@ -28,6 +28,10 @@
 - [x] [App.js](../App.js) — token varlığına göre initial route (`SignIn` / `Home`), tüm yeni ekranlar register
 - [x] [app.json](../app.json) — `"scheme": "focusview"` (native OAuth redirect için)
 
+### 4. tur (2026-05-19) — Expo Go OAuth fix
+- [x] `Google.useAuthRequest`'ten **WebView ile manuel OAuth** flow'una geç ([src/screens/SignInScreen.js](../src/screens/SignInScreen.js)). Sebep: SDK 50+'da Google provider Android'de `androidClientId` zorunlu, ki Expo Go'nun paket adı (`host.exp.exponent`) Google tarafından artık yeni client'larda kabul edilmiyor. Implicit flow + fragment parse + intercept.
+- [x] `OAUTH_REDIRECT_URI` config'e taşındı, fiyat etiketi (`https://auth.expo.io/@ilkan1/focusview`) bir string olarak — Google sadece eşleşip eşleşmediğine bakıyor, hedef sayfanın yüklenmesine gerek yok.
+
 ### 3. tur (2026-05-19) — API bağlantısı hazırlığı
 - [x] Git init + GitHub remote (`origin` = https://github.com/ilkan234/focusview) + ilk commit + push
 - [x] [src/config.js](../src/config.js) `.gitignore`'a alındı, [src/config.example.js](../src/config.example.js) template olarak commit edildi — gerçek ID'ler artık yanlışlıkla repo'ya kaçmaz
