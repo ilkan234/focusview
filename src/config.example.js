@@ -1,4 +1,6 @@
-// Paste your Google OAuth Client IDs from Google Cloud Console.
+// Template — copy to `src/config.js` and fill in real values.
+// `src/config.js` is gitignored so secrets stay local.
+//
 // In Expo Go (development) the Web client ID is what gets used via the auth proxy.
 // In a standalone Android build, the Android client ID is used.
 export const GOOGLE_WEB_CLIENT_ID = 'REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com';

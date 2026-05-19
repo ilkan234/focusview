@@ -33,6 +33,12 @@ yarn-error.*
 # local env files
 .env*.local
 
+# real OAuth client IDs — use src/config.example.js as template
+src/config.js
+
+# Claude Code project settings
+.claude/
+
 # typescript
 *.tsbuildinfo
 

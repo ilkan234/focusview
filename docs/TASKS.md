@@ -1,6 +1,6 @@
 # focusview — Görev Takibi
 
-> Son güncelleme: 2026-05-19
+> Son güncelleme: 2026-05-19 (3. tur)
 
 ## Yapıldı
 
@@ -28,14 +28,27 @@
 - [x] [App.js](../App.js) — token varlığına göre initial route (`SignIn` / `Home`), tüm yeni ekranlar register
 - [x] [app.json](../app.json) — `"scheme": "focusview"` (native OAuth redirect için)
 
+### 3. tur (2026-05-19) — API bağlantısı hazırlığı
+- [x] Git init + GitHub remote (`origin` = https://github.com/ilkan234/focusview) + ilk commit + push
+- [x] [src/config.js](../src/config.js) `.gitignore`'a alındı, [src/config.example.js](../src/config.example.js) template olarak commit edildi — gerçek ID'ler artık yanlışlıkla repo'ya kaçmaz
+- [x] [app.json](../app.json) `android.package = "com.ilkan234.focusview"` eklendi — Android OAuth client için gerekli
+- [x] [.gitignore](../.gitignore) `.claude/` proje ayarları ignore'a alındı
+- [x] **[docs/SETUP_OAUTH.md](SETUP_OAUTH.md)** — GCP'de proje, YouTube Data API enable, consent screen, Web client + Android client kurulum rehberi + sık hatalar tablosu
+
 ---
 
-## Yarım Kalanlar / Çalıştırmadan Önce Yapılması Gerekenler
+## ⚠️ Sen Yapacaksın — Çalıştırmadan Önce
 
-- [ ] **[src/config.js](../src/config.js) içine gerçek OAuth client ID'lerini yapıştır**
-  - `GOOGLE_WEB_CLIENT_ID` ve `GOOGLE_ANDROID_CLIENT_ID` şu an `REPLACE_WITH_...` placeholder
-  - Google Cloud Console → APIs & Services → Credentials
-- [ ] **Google Cloud projesinde YouTube Data API v3'ü etkinleştir** (aynı OAuth client'ın bağlı olduğu projede)
+> Bu adımları yapmak için → **[docs/SETUP_OAUTH.md](SETUP_OAUTH.md)** dosyasını takip et.
+
+- [ ] **GCP'de "focusview" projesi oluştur** (henüz yoksa)
+- [ ] **YouTube Data API v3'ü etkinleştir** (APIs & Services → Library)
+- [ ] **OAuth consent screen** — External, app adı focusview, scope `youtube.readonly`, kendi email'ini test user olarak ekle
+- [ ] **Web OAuth Client oluştur** — authorized redirect URI: `https://auth.expo.io/@<expo-kullanici-adin>/focusview`
+- [ ] **Android OAuth Client oluştur** *(opsiyonel — sadece Expo Go ile geliştirceksen atlanabilir)*:
+  - Package: `com.ilkan234.focusview`
+  - SHA-1: `npx eas credentials` veya `keytool` ile
+- [ ] **`src/config.js`'e gerçek Web + Android Client ID'lerini yapıştır**
 - [ ] **Gerçek cihazda smoke test**:
   - [ ] Sign-in akışı → token kaydı doğru mu
   - [ ] Bir segment oluştur → feed gerçekten dolu mu
