@@ -2,15 +2,40 @@
 
 Bu adımların hepsi **Google Cloud Console** ve **terminal** üzerinde yapılır. Sonunda **Web Client ID** elde edeceksin — bunu `src/config.js`'e yapıştıracaksın. *(Android Client ID sadece standalone APK çıkardığında lazım, Expo Go ile geliştirme için gerek yok.)*
 
-## Neden WebView ile manuel OAuth?
+## OAuth akışı (Plan B — Chrome Custom Tabs + GitHub Pages bridge)
 
-Expo SDK 50'den itibaren `expo-auth-session/providers/google` Android'de **mutlaka** `androidClientId` istiyor — ki bu da ancak standalone bir build varsa anlamlı (Expo Go'nun paket adı `host.exp.exponent` ve Google bu paket adını yeni client'lar için kabul etmiyor). Yani **Expo Go + Google.useAuthRequest** kombinasyonu artık geçmiyor.
+Expo Go + Google OAuth iki kez zorluk çıkardı:
 
-Çözüm: [src/screens/SignInScreen.js](../src/screens/SignInScreen.js) Google'ın OAuth URL'sini bir `WebView` modal'ında açıyor, kullanıcı izin verdikten sonra Google'ın redirect ettiği URL'i WebView içinde yakalayıp fragment'taki `access_token`'ı çekiyor. Standart implicit-flow.
+1. **`Google.useAuthRequest`** Android'de `androidClientId` istiyor — Expo Go'nun paket adı (`host.exp.exponent`) Google tarafından artık yeni client'larda kabul edilmediği için bu yol kapalı.
+2. **Embedded WebView ile manuel OAuth** Google'ın "secure browser" politikasına takılıyor (`disallowed_useragent`, hata 403). UA spoof'u da yetmiyor.
+
+Bu yüzden şu mimariye geçtik:
+
+```
+[App: SignInScreen]
+       │
+       │ WebBrowser.openAuthSessionAsync(authUrl, returnUrl)
+       ↓                                       ↑
+[Chrome Custom Tab]                            │ deep link: focusview://oauthredirect
+       │                                       │            (Expo Go'da exp://...)
+       │ Google sign-in + consent              │
+       ↓                                       │
+[Google → redirect_uri]                        │
+       │                                       │
+       │ HTTP 302 with #access_token=...       │
+       ↓                                       │
+[ilkan234.github.io/focusview/oauth.html] ─────┘
+       (Pages bridge — JS reads state, deep-links back)
+```
+
+- `expo-web-browser`'ın `openAuthSessionAsync`'i Chrome Custom Tab açar → Google bunu meşru tarayıcı sayar, `disallowed_useragent` yok.
+- Google'ın `redirect_uri` olarak gördüğü URL **statik** olmak zorunda (GCP'de kayıtlı) ama Expo Go'da app'in deep link URL'i runtime'da değişiyor (`exp://<lan-ip>:<port>/--/oauthredirect`). Çözüm: `state` parametresine `<csrf>::<returnUrl>` paketleyip GitHub Pages'daki bridge sayfasına gönderiyoruz, oradaki JS state'i okuyup app'in dinamik deep link'ine yönlendiriyor.
+- App tarafında `Linking.createURL('oauthredirect')` runtime'a göre doğru URL'i üretiyor.
 
 Bu yüzden:
-- Sadece **Web Client ID** yeterli (Android Client'a gerek yok).
-- Redirect URI sadece bir **string** — Google'ın bilmesi gereken o, hedef sayfanın gerçekten yüklenmesine gerek yok (biz WebView'da intercept ediyoruz).
+- Sadece **Web Client ID** yeterli (Android Client'a hâlâ gerek yok).
+- GCP'de Authorized redirect URI olarak **GitHub Pages bridge URL'in** kayıtlı olmalı.
+- GitHub Pages'ı bu repo'nun `/docs` klasöründen serve etmen lazım (kurulum aşağıda).
 
 > **Önemli**: `src/config.js` artık `.gitignore`'da. Gerçek ID'lerini koyduğunda commit'e dahil olmayacak. Kurulum için template'i kopyala:
 > ```bash
@@ -19,6 +44,19 @@ Bu yüzden:
 > (Bu repo'da `config.js` zaten yerinde, yine de fresh clone yaparsan bu komutu çalıştırman gerekir.)
 
 ---
+
+## 0. GitHub Pages'ı aç (Plan B köprü sayfası için)
+
+1. GitHub'da `ilkan234/focusview` repo'sunu aç → **Settings → Pages**.
+2. **Source**: `Deploy from a branch` → **Branch**: `main` → **Folder**: `/docs` → **Save**.
+3. ~1 dk bekle, sonra şu URL açılıyor mu kontrol et:
+   ```
+   https://ilkan234.github.io/focusview/oauth.html
+   ```
+   "Signing you in… / Sign-in failed: No data returned from Google." görmelisin (boş ziyarette beklenen davranış, hata mesajı değil).
+4. **Bu URL'i bir kenara not et — Adım 4'te GCP'ye redirect URI olarak gireceğiz.**
+
+> Sayfa `docs/oauth.html`'dan serve ediliyor; Jekyll'i devre dışı bırakmak için `docs/.nojekyll` da var. Markdown dosyaları da serve olabilir ama önemli değil — sadece `oauth.html`'i kullanıyoruz.
 
 ## 1. Google Cloud projesi
 
@@ -67,14 +105,16 @@ OAuth Platform
 
 ## 4. Web Client ID (Expo Go için kritik)
 
+> Eğer Web Client'ı zaten oluşturduysan, **sadece authorized redirect URI'sini güncelle**: `https://ilkan234.github.io/focusview/oauth.html` ekle. Eski `auth.expo.io/...` URI'si artık kullanılmıyor, silebilirsin.
+
 1. Sol menüden **OAuth Platform → Clients → "+ Create Client"** *(eski "APIs & Services → Credentials" sayfası hâlâ çalışır, ikisi de aynı yere gider)*.
 2. Application type: **Web application**.
 3. Name: `focusview-web`.
-4. **Authorized redirect URIs** → şunu ekle (Expo username'ini değiştir):
+4. **Authorized redirect URIs** → şunu ekle (Adım 0'da Pages için aldığın URL):
    ```
-   https://auth.expo.io/@SENIN_EXPO_KULLANICI_ADIN/focusview
+   https://ilkan234.github.io/focusview/oauth.html
    ```
-   - Expo username'i bulmak için terminalde: `npx expo whoami` (Expo hesabın yoksa `npx expo register` ile aç).
+   - URL tam olarak böyle olmalı, sondaki slash yok. GitHub user'ın farklıysa o kısmı değiştir.
 5. Create → açılan dialog'tan **Client ID**'yi kopyala (`xxxx.apps.googleusercontent.com` formatında).
 
 Bunu `src/config.js`'de `GOOGLE_WEB_CLIENT_ID` değişkenine yapıştır.

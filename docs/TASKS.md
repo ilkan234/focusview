@@ -28,9 +28,16 @@
 - [x] [App.js](../App.js) — token varlığına göre initial route (`SignIn` / `Home`), tüm yeni ekranlar register
 - [x] [app.json](../app.json) — `"scheme": "focusview"` (native OAuth redirect için)
 
-### 4. tur (2026-05-19) — Expo Go OAuth fix
-- [x] `Google.useAuthRequest`'ten **WebView ile manuel OAuth** flow'una geç ([src/screens/SignInScreen.js](../src/screens/SignInScreen.js)). Sebep: SDK 50+'da Google provider Android'de `androidClientId` zorunlu, ki Expo Go'nun paket adı (`host.exp.exponent`) Google tarafından artık yeni client'larda kabul edilmiyor. Implicit flow + fragment parse + intercept.
-- [x] `OAUTH_REDIRECT_URI` config'e taşındı, fiyat etiketi (`https://auth.expo.io/@ilkan1/focusview`) bir string olarak — Google sadece eşleşip eşleşmediğine bakıyor, hedef sayfanın yüklenmesine gerek yok.
+### 5. tur (2026-05-19) — Plan B: Custom Tabs + GitHub Pages bridge
+- [x] WebView ile manuel OAuth da `disallowed_useragent` (403) ile patladı — Google embedded WebView'ları reddediyor. UA spoof yetmedi.
+- [x] **Chrome Custom Tabs** flow'una geç: `expo-web-browser`'ın `openAuthSessionAsync`'i. Google bunu meşru tarayıcı sayar.
+- [x] **GitHub Pages bridge sayfası** ([docs/oauth.html](oauth.html)): Google'ın redirect ettiği statik HTTPS URL. JS state'ten `returnUrl`'i okuyup app'in runtime deep link'ine yönlendiriyor.
+- [x] `expo-linking` kuruldu → `Linking.createURL('oauthredirect')` ile runtime'a göre `exp://...` veya `focusview://...` URL üretiliyor, state'in 2. parçasına `<csrf>::<returnUrl>` formatında paketlenip GH Pages'a gönderiliyor.
+- [x] `OAUTH_HTTPS_REDIRECT` config → `https://ilkan234.github.io/focusview/oauth.html`.
+- [x] [SignInScreen.js](../src/screens/SignInScreen.js) sadeleşti — Modal/WebView yok, tek `await WebBrowser.openAuthSessionAsync(...)` çağrısı + fragment parse + state doğrulama.
+
+### 4. tur (2026-05-19) — Expo Go OAuth fix (terkedildi)
+- [-] ~~`Google.useAuthRequest` → WebView ile manuel OAuth~~ — Google'ın `disallowed_useragent` politikası nedeniyle bu yol kapandı, 5. turda yerini Custom Tabs aldı.
 
 ### 3. tur (2026-05-19) — API bağlantısı hazırlığı
 - [x] Git init + GitHub remote (`origin` = https://github.com/ilkan234/focusview) + ilk commit + push
@@ -45,10 +52,11 @@
 
 > Bu adımları yapmak için → **[docs/SETUP_OAUTH.md](SETUP_OAUTH.md)** dosyasını takip et.
 
-- [ ] **GCP'de "focusview" projesi oluştur** (henüz yoksa)
-- [ ] **YouTube Data API v3'ü etkinleştir** (APIs & Services → Library)
-- [ ] **OAuth consent screen** — External, app adı focusview, scope `youtube.readonly`, kendi email'ini test user olarak ekle
-- [ ] **Web OAuth Client oluştur** — authorized redirect URI: `https://auth.expo.io/@<expo-kullanici-adin>/focusview`
+- [ ] **GitHub Pages'ı aç** (5. turdan sonra eklendi) — Settings → Pages → main branch / `/docs` folder → Save. `https://ilkan234.github.io/focusview/oauth.html` açılmalı.
+- [x] ~~GCP'de "focusview" projesi oluştur~~
+- [x] ~~YouTube Data API v3'ü etkinleştir~~
+- [x] ~~OAuth consent screen — External + test user~~
+- [ ] **Web OAuth Client'a yeni redirect URI ekle**: `https://ilkan234.github.io/focusview/oauth.html` *(eski `auth.expo.io/...` URI'sini silebilirsin)*
 - [x] ~~Android OAuth Client~~ — Expo Go ile geliştirme için **gerekmiyor**, kod tabanından çıkarıldı. Standalone APK çıkarınca [SETUP_OAUTH.md § 5](SETUP_OAUTH.md#5-android-client-id-opsiyonel--sadece-standalone-apk-için)
 - [x] **`src/config.js`'e Web Client ID yapıştırıldı**
 - [ ] **GCP Web Client'a redirect URI eklendi mi**: `https://auth.expo.io/@ilkan1/focusview`

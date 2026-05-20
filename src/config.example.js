@@ -6,11 +6,16 @@
 // (see docs/SETUP_OAUTH.md § 5).
 export const GOOGLE_WEB_CLIENT_ID = 'REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com';
 
-// Must match exactly one of the Authorized redirect URIs on the Web OAuth
-// client in GCP. The URL is just a string Google redirects to — we
-// intercept it inside our WebView; the page on the other end is never loaded.
-// Default is the legacy Expo auth proxy URL with your Expo username slotted in.
-export const OAUTH_REDIRECT_URI = 'https://auth.expo.io/@YOUR_EXPO_USERNAME/focusview';
+// HTTPS landing page (hosted by GitHub Pages from /docs) that Google
+// redirects to after the user consents. The page reads the URL fragment
+// and deep-links back into the app. Must match exactly an Authorized
+// redirect URI on the Web OAuth client in GCP.
+//
+// Update YOUR_GH_USER / YOUR_REPO to match your fork (default values
+// assume the repo is at github.com/YOUR_GH_USER/focusview with Pages
+// serving from /docs).
+export const OAUTH_HTTPS_REDIRECT =
+  'https://YOUR_GH_USER.github.io/focusview/oauth.html';
 
 export const YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.readonly'];
 

@@ -1,25 +1,26 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, ActivityIndicator, Alert, Modal,
+  SafeAreaView, ActivityIndicator, Alert,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { GOOGLE_WEB_CLIENT_ID, YOUTUBE_SCOPES, OAUTH_REDIRECT_URI } from '../config';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { GOOGLE_WEB_CLIENT_ID, YOUTUBE_SCOPES, OAUTH_HTTPS_REDIRECT } from '../config';
 import { saveToken } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
-// Google blocks OAuth from embedded WebViews ("disallowed_useragent").
-// Their detection keys mostly off the "wv" suffix the Android System
-// WebView adds to its user-agent. Override it with a plain Chrome UA
-// so the request looks like a regular mobile browser.
-const BROWSER_UA =
-  'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) ' +
-  'Chrome/120.0.0.0 Mobile Safari/537.36';
+WebBrowser.maybeCompleteAuthSession();
+
+// State carries two things: a CSRF token, and the runtime deep-link
+// URL the GitHub Pages redirect page should bounce back to. Split with
+// "::" because both halves are URL-safe but the LAN URL in dev contains
+// colons and slashes.
+const packState = (csrf, returnUrl) => `${csrf}::${returnUrl}`;
 
 const buildAuthUrl = (state) => {
   const params = {
     client_id: GOOGLE_WEB_CLIENT_ID,
-    redirect_uri: OAUTH_REDIRECT_URI,
+    redirect_uri: OAUTH_HTTPS_REDIRECT,
     response_type: 'token',
     scope: YOUTUBE_SCOPES.join(' '),
     include_granted_scopes: 'true',
@@ -44,51 +45,50 @@ const parseFragment = (url) => {
 };
 
 export default function SignInScreen({ navigation }) {
-  const [authUrl, setAuthUrl] = useState(null);
-  const handledRef = useRef(false);
-  const stateRef = useRef(null);
+  const [busy, setBusy] = useState(false);
 
-  const startSignIn = () => {
-    const state = Math.random().toString(36).slice(2);
-    stateRef.current = state;
-    handledRef.current = false;
-    setAuthUrl(buildAuthUrl(state));
-  };
+  const startSignIn = async () => {
+    setBusy(true);
+    try {
+      const csrf = Math.random().toString(36).slice(2);
+      const returnUrl = Linking.createURL('oauthredirect');
+      const state = packState(csrf, returnUrl);
+      const authUrl = buildAuthUrl(state);
 
-  const finishWithError = (msg) => {
-    setAuthUrl(null);
-    Alert.alert('Sign-in failed', msg);
-  };
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
 
-  // Returns true if we handled (i.e. caller should NOT load the URL).
-  const handleRedirect = (url) => {
-    if (!url || !url.startsWith(OAUTH_REDIRECT_URI) || handledRef.current) return false;
-    handledRef.current = true;
-    setAuthUrl(null);
+      if (result.type !== 'success' || !result.url) {
+        return;
+      }
 
-    const params = parseFragment(url);
-    if (!params) {
-      Alert.alert('Sign-in failed', 'Google returned no data.');
-      return true;
+      const params = parseFragment(result.url);
+      if (!params) {
+        Alert.alert('Sign-in failed', 'No data returned from Google.');
+        return;
+      }
+      if (params.error) {
+        Alert.alert('Sign-in failed', params.error_description || params.error);
+        return;
+      }
+      if (params.state !== csrf) {
+        Alert.alert('Sign-in failed', 'State mismatch — possible CSRF, try again.');
+        return;
+      }
+      if (!params.access_token) {
+        Alert.alert('Sign-in failed', 'No access token in redirect.');
+        return;
+      }
+
+      await saveToken({
+        accessToken: params.access_token,
+        expiresIn: parseInt(params.expires_in || '3600', 10),
+      });
+      navigation.replace('Home');
+    } catch (e) {
+      Alert.alert('Sign-in failed', e?.message || 'Unknown error');
+    } finally {
+      setBusy(false);
     }
-    if (params.error) {
-      Alert.alert('Sign-in failed', params.error_description || params.error);
-      return true;
-    }
-    if (params.state !== stateRef.current) {
-      Alert.alert('Sign-in failed', 'State mismatch — possible CSRF, try again.');
-      return true;
-    }
-    if (!params.access_token) {
-      Alert.alert('Sign-in failed', 'No access token in redirect.');
-      return true;
-    }
-
-    saveToken({
-      accessToken: params.access_token,
-      expiresIn: parseInt(params.expires_in || '3600', 10),
-    }).then(() => navigation.replace('Home'));
-    return true;
   };
 
   return (
@@ -99,51 +99,22 @@ export default function SignInScreen({ navigation }) {
           YouTube, sliced into segments you actually care about. No Shorts. No noise.
         </Text>
 
-        <TouchableOpacity style={styles.button} onPress={startSignIn}>
-          <Text style={styles.buttonText}>Sign in with Google</Text>
+        <TouchableOpacity
+          style={[styles.button, busy && styles.buttonDisabled]}
+          onPress={startSignIn}
+          disabled={busy}
+        >
+          {busy ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Sign in with Google</Text>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.fineprint}>
           We read your subscriptions and channel uploads. We never post or modify anything.
         </Text>
       </View>
-
-      <Modal
-        visible={!!authUrl}
-        animationType="slide"
-        onRequestClose={() => setAuthUrl(null)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setAuthUrl(null)} style={styles.modalCancel}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Sign in with Google</Text>
-            <View style={styles.modalCancel} />
-          </View>
-          {authUrl && (
-            <WebView
-              source={{ uri: authUrl }}
-              userAgent={BROWSER_UA}
-              applicationNameForUserAgent={BROWSER_UA}
-              incognito
-              javaScriptEnabled
-              domStorageEnabled
-              startInLoadingState
-              onShouldStartLoadWithRequest={(req) => !handleRedirect(req.url)}
-              onNavigationStateChange={(navState) => handleRedirect(navState.url)}
-              onError={(e) =>
-                finishWithError(e.nativeEvent?.description || 'WebView failed to load.')
-              }
-              renderLoading={() => (
-                <View style={styles.loading}>
-                  <ActivityIndicator color={colors.accent} size="large" />
-                </View>
-              )}
-            />
-          )}
-        </SafeAreaView>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -167,24 +138,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
     minWidth: 240, alignItems: 'center', marginBottom: spacing.lg,
   },
+  buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   fineprint: {
     color: colors.textMuted, fontSize: 12, textAlign: 'center',
     marginTop: spacing.lg, lineHeight: 18,
-  },
-  modalContainer: { flex: 1, backgroundColor: colors.background },
-  modalHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  modalCancel: { minWidth: 60 },
-  modalCancelText: { color: colors.accent, fontSize: 15, fontWeight: '600' },
-  modalTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
-  loading: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: colors.background,
   },
 });

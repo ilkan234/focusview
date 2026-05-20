@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>focusview — Signing you in…</title>
+<style>
+  html,body { margin:0; padding:0; background:#0F0F0F; color:#fff;
+              font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { min-height:100vh; display:flex; flex-direction:column;
+          justify-content:center; align-items:center; padding:24px; text-align:center; }
+  h1 { font-size:26px; margin:0 0 12px; letter-spacing:2px; font-weight:800; }
+  p { color:#888; line-height:22px; max-width:340px; margin:6px 0; }
+  .accent { color:#FF4757; }
+  code { background:#1A1A1A; padding:2px 6px; border-radius:4px;
+         font-size:12px; word-break:break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>focusview</h1>
+  <p id="msg">Signing you in…</p>
+  <p id="detail" style="font-size:12px;"></p>
+</div>
+<script>
+(function () {
+  function fail(reason) {
+    document.getElementById('msg').innerHTML = '<span class="accent">Sign-in failed</span>';
+    document.getElementById('detail').textContent = reason;
+  }
+
+  // Google returns the result in the URL fragment (implicit flow):
+  //   #access_token=...&expires_in=...&state=<csrf>::<returnUrl>&token_type=Bearer&scope=...
+  var fragment = (window.location.hash || '').replace(/^#/, '');
+  if (!fragment) {
+    fail('No data returned from Google. If you opened this page directly, return to the app and try again.');
+    return;
+  }
+
+  var params = new URLSearchParams(fragment);
+  if (params.get('error')) {
+    fail(params.get('error_description') || params.get('error'));
+    return;
+  }
+
+  var state = params.get('state') || '';
+  var idx = state.indexOf('::');
+  if (idx < 0) {
+    fail('State is malformed — could not find the return URL.');
+    return;
+  }
+  var csrf = state.slice(0, idx);
+  var returnUrl = state.slice(idx + 2);
+  if (!returnUrl) {
+    fail('No return URL in state.');
+    return;
+  }
+
+  // Rewrite state to just the csrf token so the app can verify it.
+  params.set('state', csrf);
+  var dest = returnUrl + '#' + params.toString();
+
+  // Try to deep-link back. If the OS doesn't route it, the page just stays.
+  window.location.replace(dest);
+  setTimeout(function () {
+    document.getElementById('msg').innerHTML = 'Almost there…';
+    document.getElementById('detail').innerHTML =
+      'If the focusview app didn\'t open automatically, tap: <a href="' +
+      dest.replace(/"/g, '&quot;') + '" style="color:#FF4757;">Return to focusview</a>';
+  }, 1200);
+})();
+</script>
+</body>
+</html>
