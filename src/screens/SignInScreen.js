@@ -8,6 +8,14 @@ import { GOOGLE_WEB_CLIENT_ID, YOUTUBE_SCOPES, OAUTH_REDIRECT_URI } from '../con
 import { saveToken } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
+// Google blocks OAuth from embedded WebViews ("disallowed_useragent").
+// Their detection keys mostly off the "wv" suffix the Android System
+// WebView adds to its user-agent. Override it with a plain Chrome UA
+// so the request looks like a regular mobile browser.
+const BROWSER_UA =
+  'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+  'Chrome/120.0.0.0 Mobile Safari/537.36';
+
 const buildAuthUrl = (state) => {
   const params = {
     client_id: GOOGLE_WEB_CLIENT_ID,
@@ -116,6 +124,8 @@ export default function SignInScreen({ navigation }) {
           {authUrl && (
             <WebView
               source={{ uri: authUrl }}
+              userAgent={BROWSER_UA}
+              applicationNameForUserAgent={BROWSER_UA}
               incognito
               javaScriptEnabled
               domStorageEnabled
