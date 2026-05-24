@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   SafeAreaView, ActivityIndicator, Alert,
@@ -46,45 +46,90 @@ const parseFragment = (url) => {
 
 export default function SignInScreen({ navigation }) {
   const [busy, setBusy] = useState(false);
+  const [debug, setDebug] = useState('');
+  const pendingRef = useRef(null);
+
+  const log = (line) => {
+    setDebug((prev) => {
+      const next = `${new Date().toISOString().slice(11, 19)} ${line}\n${prev}`;
+      return next.slice(0, 2000);
+    });
+    console.log('[signin]', line);
+  };
+
+  const completeSignIn = async (url, source) => {
+    log(`completeSignIn via ${source}: ${url.slice(0, 120)}`);
+    const pending = pendingRef.current;
+    if (!pending) {
+      log('  no pending — ignored');
+      return false;
+    }
+    pendingRef.current = null;
+
+    const params = parseFragment(url);
+    if (!params) {
+      log('  no fragment in URL');
+      Alert.alert('Sign-in failed', `No fragment in redirect URL:\n${url}`);
+      return true;
+    }
+    log(`  parsed keys: ${Object.keys(params).join(',')}`);
+    if (params.error) {
+      Alert.alert('Sign-in failed', params.error_description || params.error);
+      return true;
+    }
+    if (params.state !== pending.csrf) {
+      Alert.alert('Sign-in failed', `State mismatch\nexpected: ${pending.csrf}\ngot: ${params.state}`);
+      return true;
+    }
+    if (!params.access_token) {
+      Alert.alert('Sign-in failed', 'No access token in redirect.');
+      return true;
+    }
+
+    await saveToken({
+      accessToken: params.access_token,
+      expiresIn: parseInt(params.expires_in || '3600', 10),
+    });
+    log('  token saved — navigating Home');
+    navigation.replace('Home');
+    return true;
+  };
+
+  useEffect(() => {
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      log(`Linking url event: ${url ? url.slice(0, 120) : '(empty)'}`);
+      if (!url) return;
+      if (!pendingRef.current) return;
+      if (!url.includes('oauthredirect')) return;
+      completeSignIn(url, 'Linking');
+    });
+    Linking.getInitialURL().then((url) => {
+      if (url) log(`Initial URL: ${url.slice(0, 120)}`);
+    });
+    return () => sub.remove();
+  }, []);
 
   const startSignIn = async () => {
     setBusy(true);
+    setDebug('');
     try {
       const csrf = Math.random().toString(36).slice(2);
       const returnUrl = Linking.createURL('oauthredirect');
+      pendingRef.current = { csrf };
+      log(`returnUrl=${returnUrl}`);
+      log(`csrf=${csrf}`);
       const state = packState(csrf, returnUrl);
       const authUrl = buildAuthUrl(state);
 
       const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
+      log(`openAuthSession result.type=${result.type} url=${result.url ? result.url.slice(0, 120) : '(none)'}`);
 
-      if (result.type !== 'success' || !result.url) {
-        return;
+      if (result.type === 'success' && result.url) {
+        await completeSignIn(result.url, 'WebBrowser');
       }
-
-      const params = parseFragment(result.url);
-      if (!params) {
-        Alert.alert('Sign-in failed', 'No data returned from Google.');
-        return;
-      }
-      if (params.error) {
-        Alert.alert('Sign-in failed', params.error_description || params.error);
-        return;
-      }
-      if (params.state !== csrf) {
-        Alert.alert('Sign-in failed', 'State mismatch — possible CSRF, try again.');
-        return;
-      }
-      if (!params.access_token) {
-        Alert.alert('Sign-in failed', 'No access token in redirect.');
-        return;
-      }
-
-      await saveToken({
-        accessToken: params.access_token,
-        expiresIn: parseInt(params.expires_in || '3600', 10),
-      });
-      navigation.replace('Home');
     } catch (e) {
+      pendingRef.current = null;
+      log(`exception: ${e?.message || e}`);
       Alert.alert('Sign-in failed', e?.message || 'Unknown error');
     } finally {
       setBusy(false);
@@ -114,6 +159,13 @@ export default function SignInScreen({ navigation }) {
         <Text style={styles.fineprint}>
           We read your subscriptions and channel uploads. We never post or modify anything.
         </Text>
+
+        {debug ? (
+          <View style={styles.debugBox}>
+            <Text style={styles.debugTitle}>debug</Text>
+            <Text style={styles.debugText} selectable>{debug}</Text>
+          </View>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -143,5 +195,16 @@ const styles = StyleSheet.create({
   fineprint: {
     color: colors.textMuted, fontSize: 12, textAlign: 'center',
     marginTop: spacing.lg, lineHeight: 18,
+  },
+  debugBox: {
+    marginTop: spacing.lg, padding: spacing.md, borderRadius: 8,
+    backgroundColor: '#1A1A1A', maxHeight: 240, alignSelf: 'stretch',
+  },
+  debugTitle: {
+    color: colors.accent, fontSize: 11, fontWeight: '700',
+    marginBottom: 4, letterSpacing: 1,
+  },
+  debugText: {
+    color: '#9AA', fontSize: 11, fontFamily: 'monospace', lineHeight: 15,
   },
 });
