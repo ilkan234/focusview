@@ -30,7 +30,8 @@ focusview/
 │       └── VideoPlayerScreen.js        # react-native-youtube-iframe oynatıcı
 └── docs/
     ├── PROJECT.md                      # (bu dosya)
-    └── TASKS.md                        # iş takibi
+    ├── TASKS.md                        # açık / yapılacak işler
+    └── TASKS_DONE.md                   # tamamlananlar (changelog)
 ```
 
 ## Veri Akışı
