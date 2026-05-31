@@ -1,15 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useLayoutEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput,
   TouchableOpacity, SafeAreaView, ScrollView, Alert
 } from 'react-native';
-import { addSegment } from '../utils/storage';
+import { addSegment, updateSegment } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
-export default function CreateSegmentScreen({ navigation }) {
-  const [name, setName] = useState('');
+export default function CreateSegmentScreen({ navigation, route }) {
+  const editingSegment = route.params?.segment;
+  const isEditing = !!editingSegment;
+
+  const [name, setName] = useState(editingSegment?.name ?? '');
   const [keywordInput, setKeywordInput] = useState('');
-  const [keywords, setKeywords] = useState([]);
+  const [keywords, setKeywords] = useState(editingSegment?.keywords ?? []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: isEditing ? 'Edit Segment' : 'New Segment' });
+  }, [navigation, isEditing]);
 
   const addKeyword = () => {
     const trimmed = keywordInput.trim().toLowerCase();
@@ -21,7 +28,11 @@ export default function CreateSegmentScreen({ navigation }) {
   const handleSave = async () => {
     if (!name.trim()) return Alert.alert('Name required', 'Give your segment a name.');
     if (keywords.length === 0) return Alert.alert('Keywords required', 'Add at least one keyword.');
-    await addSegment({ name: name.trim(), keywords });
+    if (isEditing) {
+      await updateSegment(editingSegment.id, { name: name.trim(), keywords });
+    } else {
+      await addSegment({ name: name.trim(), keywords });
+    }
     navigation.goBack();
   };
 
@@ -68,7 +79,7 @@ export default function CreateSegmentScreen({ navigation }) {
         {keywords.length > 0 && <Text style={styles.hint}>Tap a keyword to remove it.</Text>}
 
         <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-          <Text style={styles.saveBtnText}>Save Segment</Text>
+          <Text style={styles.saveBtnText}>{isEditing ? 'Update Segment' : 'Save Segment'}</Text>
         </TouchableOpacity>
 
       </ScrollView>

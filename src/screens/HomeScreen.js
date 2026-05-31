@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, SafeAreaView, StatusBar
+  TouchableOpacity, SafeAreaView, StatusBar, Alert
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getSegments } from '../utils/storage';
+import { getSegments, deleteSegment } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
 export default function HomeScreen({ navigation }) {
@@ -15,6 +15,29 @@ export default function HomeScreen({ navigation }) {
       getSegments().then(setSegments);
     }, [])
   );
+
+  const confirmDelete = (segment) => {
+    Alert.alert(
+      'Delete segment',
+      `Delete "${segment.name}"? This can't be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => setSegments(await deleteSegment(segment.id)),
+        },
+      ]
+    );
+  };
+
+  const showActions = (segment) => {
+    Alert.alert(segment.name, undefined, [
+      { text: 'Edit', onPress: () => navigation.navigate('CreateSegment', { segment }) },
+      { text: 'Delete', style: 'destructive', onPress: () => confirmDelete(segment) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -52,12 +75,20 @@ export default function HomeScreen({ navigation }) {
             <TouchableOpacity
               style={styles.card}
               onPress={() => navigation.navigate('SegmentFeed', { segment: item })}
+              onLongPress={() => showActions(item)}
+              delayLongPress={250}
             >
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardName}>{item.name}</Text>
                 <Text style={styles.cardKeywords}>{item.keywords.join(' · ')}</Text>
               </View>
-              <Text style={styles.arrow}>›</Text>
+              <TouchableOpacity
+                style={styles.moreButton}
+                onPress={() => showActions(item)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Text style={styles.more}>⋯</Text>
+              </TouchableOpacity>
             </TouchableOpacity>
           )}
         />
@@ -106,5 +137,6 @@ const styles = StyleSheet.create({
   },
   cardName: { color: colors.text, fontSize: 17, fontWeight: '600', marginBottom: 4 },
   cardKeywords: { color: colors.textSecondary, fontSize: 13 },
-  arrow: { color: colors.textSecondary, fontSize: 24 },
+  moreButton: { paddingHorizontal: spacing.sm },
+  more: { color: colors.textSecondary, fontSize: 22, fontWeight: '700' },
 });

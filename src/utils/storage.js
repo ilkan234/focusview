@@ -21,6 +21,13 @@ export const addSegment = async (segment) => {
   return updated;
 };
 
+export const updateSegment = async (id, changes) => {
+  const segments = await getSegments();
+  const updated = segments.map(s => (s.id === id ? { ...s, ...changes, id } : s));
+  await saveSegments(updated);
+  return updated;
+};
+
 export const deleteSegment = async (id) => {
   const segments = await getSegments();
   const updated = segments.filter(s => s.id !== id);

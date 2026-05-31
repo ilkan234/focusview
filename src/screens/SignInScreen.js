@@ -1,21 +1,32 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, ActivityIndicator, Alert,
+  SafeAreaView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
+import { WebView } from 'react-native-webview';
 import { GOOGLE_WEB_CLIENT_ID, YOUTUBE_SCOPES, OAUTH_HTTPS_REDIRECT } from '../config';
 import { saveToken } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
-WebBrowser.maybeCompleteAuthSession();
+// Google blocks OAuth in embedded WebViews ("disallowed_useragent") when the
+// UA contains the "; wv" token that react-native-webview adds by default.
+// A plain Chrome UA (no "wv") looks like a normal browser and is allowed.
+const BROWSER_UA =
+  'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
-// State carries two things: a CSRF token, and the runtime deep-link
-// URL the GitHub Pages redirect page should bounce back to. Split with
-// "::" because both halves are URL-safe but the LAN URL in dev contains
-// colons and slashes.
-const packState = (csrf, returnUrl) => `${csrf}::${returnUrl}`;
+// Injected on every page so we can read the token from the URL fragment
+// (the # part is visible to JS even when native navigation events strip it).
+const TOKEN_PROBE = `
+  (function () {
+    try {
+      if (window.location.href.indexOf('access_token') > -1) {
+        window.ReactNativeWebView.postMessage(window.location.href);
+      }
+    } catch (e) {}
+  })();
+  true;
+`;
 
 const buildAuthUrl = (state) => {
   const params = {
@@ -45,40 +56,36 @@ const parseFragment = (url) => {
 };
 
 export default function SignInScreen({ navigation }) {
-  const [busy, setBusy] = useState(false);
-  const [debug, setDebug] = useState('');
-  const pendingRef = useRef(null);
+  const [authUrl, setAuthUrl] = useState(null);
+  const csrfRef = useRef(null);
+  const doneRef = useRef(false);
 
-  const log = (line) => {
-    setDebug((prev) => {
-      const next = `${new Date().toISOString().slice(11, 19)} ${line}\n${prev}`;
-      return next.slice(0, 2000);
-    });
-    console.log('[signin]', line);
+  const startSignIn = () => {
+    const csrf = Math.random().toString(36).slice(2);
+    csrfRef.current = csrf;
+    doneRef.current = false;
+    setAuthUrl(buildAuthUrl(csrf));
   };
 
-  const completeSignIn = async (url, source) => {
-    log(`completeSignIn via ${source}: ${url.slice(0, 120)}`);
-    const pending = pendingRef.current;
-    if (!pending) {
-      log('  no pending — ignored');
-      return false;
-    }
-    pendingRef.current = null;
+  const closeWebView = () => setAuthUrl(null);
+
+  // Returns true if the URL was the redirect carrying our token.
+  const handleUrl = async (url) => {
+    if (doneRef.current) return true;
+    if (!url || url.indexOf(OAUTH_HTTPS_REDIRECT) !== 0) return false;
 
     const params = parseFragment(url);
-    if (!params) {
-      log('  no fragment in URL');
-      Alert.alert('Sign-in failed', `No fragment in redirect URL:\n${url}`);
-      return true;
-    }
-    log(`  parsed keys: ${Object.keys(params).join(',')}`);
+    if (!params || (!params.access_token && !params.error)) return false;
+
+    doneRef.current = true;
+    closeWebView();
+
     if (params.error) {
       Alert.alert('Sign-in failed', params.error_description || params.error);
       return true;
     }
-    if (params.state !== pending.csrf) {
-      Alert.alert('Sign-in failed', `State mismatch\nexpected: ${pending.csrf}\ngot: ${params.state}`);
+    if (params.state !== csrfRef.current) {
+      Alert.alert('Sign-in failed', 'Security check failed (state mismatch). Please try again.');
       return true;
     }
     if (!params.access_token) {
@@ -90,50 +97,22 @@ export default function SignInScreen({ navigation }) {
       accessToken: params.access_token,
       expiresIn: parseInt(params.expires_in || '3600', 10),
     });
-    log('  token saved — navigating Home');
     navigation.replace('Home');
     return true;
   };
 
-  useEffect(() => {
-    const sub = Linking.addEventListener('url', ({ url }) => {
-      log(`Linking url event: ${url ? url.slice(0, 120) : '(empty)'}`);
-      if (!url) return;
-      if (!pendingRef.current) return;
-      if (!url.includes('oauthredirect')) return;
-      completeSignIn(url, 'Linking');
-    });
-    Linking.getInitialURL().then((url) => {
-      if (url) log(`Initial URL: ${url.slice(0, 120)}`);
-    });
-    return () => sub.remove();
-  }, []);
-
-  const startSignIn = async () => {
-    setBusy(true);
-    setDebug('');
-    try {
-      const csrf = Math.random().toString(36).slice(2);
-      const returnUrl = Linking.createURL('oauthredirect');
-      pendingRef.current = { csrf };
-      log(`returnUrl=${returnUrl}`);
-      log(`csrf=${csrf}`);
-      const state = packState(csrf, returnUrl);
-      const authUrl = buildAuthUrl(state);
-
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, returnUrl);
-      log(`openAuthSession result.type=${result.type} url=${result.url ? result.url.slice(0, 120) : '(none)'}`);
-
-      if (result.type === 'success' && result.url) {
-        await completeSignIn(result.url, 'WebBrowser');
-      }
-    } catch (e) {
-      pendingRef.current = null;
-      log(`exception: ${e?.message || e}`);
-      Alert.alert('Sign-in failed', e?.message || 'Unknown error');
-    } finally {
-      setBusy(false);
+  // Block any navigation that leaves the web (e.g. the bridge page trying to
+  // open exp:// — that is what used to pop the "open with mail app" chooser).
+  const onShouldStart = (req) => {
+    const url = req.url || '';
+    if (url.indexOf(OAUTH_HTTPS_REDIRECT) === 0) {
+      handleUrl(url);
+      // Let it load so the injected probe can also read the fragment, but the
+      // page's own redirect to exp:// is blocked by the http(s) guard below.
+      return true;
     }
+    if (!/^https?:/i.test(url)) return false; // no exp://, focusview://, mailto:, etc.
+    return true;
   };
 
   return (
@@ -144,29 +123,42 @@ export default function SignInScreen({ navigation }) {
           YouTube, sliced into segments you actually care about. No Shorts. No noise.
         </Text>
 
-        <TouchableOpacity
-          style={[styles.button, busy && styles.buttonDisabled]}
-          onPress={startSignIn}
-          disabled={busy}
-        >
-          {busy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Sign in with Google</Text>
-          )}
+        <TouchableOpacity style={styles.button} onPress={startSignIn}>
+          <Text style={styles.buttonText}>Sign in with Google</Text>
         </TouchableOpacity>
 
         <Text style={styles.fineprint}>
           We read your subscriptions and channel uploads. We never post or modify anything.
         </Text>
-
-        {debug ? (
-          <View style={styles.debugBox}>
-            <Text style={styles.debugTitle}>debug</Text>
-            <Text style={styles.debugText} selectable>{debug}</Text>
-          </View>
-        ) : null}
       </View>
+
+      <Modal visible={!!authUrl} animationType="slide" onRequestClose={closeWebView}>
+        <SafeAreaView style={styles.modal}>
+          <View style={styles.modalBar}>
+            <Text style={styles.modalTitle}>Sign in with Google</Text>
+            <TouchableOpacity onPress={closeWebView} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {authUrl ? (
+            <WebView
+              source={{ uri: authUrl }}
+              userAgent={BROWSER_UA}
+              incognito
+              injectedJavaScript={TOKEN_PROBE}
+              onShouldStartLoadWithRequest={onShouldStart}
+              onNavigationStateChange={(s) => handleUrl(s.url)}
+              onMessage={(e) => handleUrl(e.nativeEvent.data)}
+              startInLoadingState
+              renderLoading={() => (
+                <View style={styles.loading}>
+                  <ActivityIndicator color={colors.accent} />
+                </View>
+              )}
+            />
+          ) : null}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -190,21 +182,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
     minWidth: 240, alignItems: 'center', marginBottom: spacing.lg,
   },
-  buttonDisabled: { opacity: 0.5 },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   fineprint: {
     color: colors.textMuted, fontSize: 12, textAlign: 'center',
     marginTop: spacing.lg, lineHeight: 18,
   },
-  debugBox: {
-    marginTop: spacing.lg, padding: spacing.md, borderRadius: 8,
-    backgroundColor: '#1A1A1A', maxHeight: 240, alignSelf: 'stretch',
+  modal: { flex: 1, backgroundColor: colors.background },
+  modalBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  debugTitle: {
-    color: colors.accent, fontSize: 11, fontWeight: '700',
-    marginBottom: 4, letterSpacing: 1,
-  },
-  debugText: {
-    color: '#9AA', fontSize: 11, fontFamily: 'monospace', lineHeight: 15,
-  },
+  modalTitle: { color: colors.text, fontSize: 16, fontWeight: '600' },
+  modalClose: { color: colors.textSecondary, fontSize: 20, fontWeight: '700' },
+  loading: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
 });
