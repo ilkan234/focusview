@@ -1,11 +1,11 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   SafeAreaView, ActivityIndicator, Alert, Modal,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { GOOGLE_WEB_CLIENT_ID, YOUTUBE_SCOPES, OAUTH_HTTPS_REDIRECT } from '../config';
-import { saveToken } from '../utils/storage';
+import { saveToken, setHasSignedIn, getHasSignedIn } from '../utils/storage';
 import { colors, spacing } from '../theme';
 
 // Google blocks OAuth in embedded WebViews ("disallowed_useragent") when the
@@ -20,7 +20,8 @@ const BROWSER_UA =
 const TOKEN_PROBE = `
   (function () {
     try {
-      if (window.location.href.indexOf('access_token') > -1) {
+      if (window.location.href.indexOf('access_token') > -1 ||
+          window.location.href.indexOf('error=') > -1) {
         window.ReactNativeWebView.postMessage(window.location.href);
       }
     } catch (e) {}
@@ -28,16 +29,20 @@ const TOKEN_PROBE = `
   true;
 `;
 
-const buildAuthUrl = (state) => {
+// How long to wait for a silent re-login before falling back to the button.
+const SILENT_TIMEOUT_MS = 12000;
+
+// silent=true asks Google to return a token without any UI (prompt=none).
+const buildAuthUrl = (state, silent) => {
   const params = {
     client_id: GOOGLE_WEB_CLIENT_ID,
     redirect_uri: OAUTH_HTTPS_REDIRECT,
     response_type: 'token',
     scope: YOUTUBE_SCOPES.join(' '),
     include_granted_scopes: 'true',
-    prompt: 'consent',
     state,
   };
+  if (silent) params.prompt = 'none';
   const qs = Object.entries(params)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join('&');
@@ -45,7 +50,7 @@ const buildAuthUrl = (state) => {
 };
 
 const parseFragment = (url) => {
-  const hash = url.split('#')[1];
+  const hash = url.split('#')[1] || (url.includes('?') ? url.split('?')[1] : '');
   if (!hash) return null;
   const out = {};
   for (const pair of hash.split('&')) {
@@ -56,20 +61,50 @@ const parseFragment = (url) => {
 };
 
 export default function SignInScreen({ navigation }) {
+  // 'checking' = deciding whether to try silent login, 'silent' = hidden
+  // re-login in progress, 'idle' = show button, 'interactive' = visible WebView.
+  const [mode, setMode] = useState('checking');
   const [authUrl, setAuthUrl] = useState(null);
   const csrfRef = useRef(null);
   const doneRef = useRef(false);
+  const modeRef = useRef('checking');
+  const timerRef = useRef(null);
 
-  const startSignIn = () => {
+  const setModeBoth = (m) => { modeRef.current = m; setMode(m); };
+
+  const clearTimer = () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+  };
+
+  const begin = (silent) => {
     const csrf = Math.random().toString(36).slice(2);
     csrfRef.current = csrf;
     doneRef.current = false;
-    setAuthUrl(buildAuthUrl(csrf));
+    setAuthUrl(buildAuthUrl(csrf, silent));
+    setModeBoth(silent ? 'silent' : 'interactive');
+    clearTimer();
+    if (silent) {
+      timerRef.current = setTimeout(() => {
+        if (doneRef.current) return;
+        // Silent login took too long or stalled — show the button instead.
+        setAuthUrl(null);
+        setModeBoth('idle');
+      }, SILENT_TIMEOUT_MS);
+    }
   };
 
-  const closeWebView = () => setAuthUrl(null);
+  // On launch, try a silent re-login if the user has signed in before.
+  useEffect(() => {
+    getHasSignedIn().then((seen) => {
+      if (seen) begin(true);
+      else setModeBoth('idle');
+    });
+    return clearTimer;
+  }, []);
 
-  // Returns true if the URL was the redirect carrying our token.
+  const closeAuth = () => { clearTimer(); setAuthUrl(null); };
+
+  // Returns true if the URL carried our token/error and was consumed.
   const handleUrl = async (url) => {
     if (doneRef.current) return true;
     if (!url || url.indexOf(OAUTH_HTTPS_REDIRECT) !== 0) return false;
@@ -78,18 +113,22 @@ export default function SignInScreen({ navigation }) {
     if (!params || (!params.access_token && !params.error)) return false;
 
     doneRef.current = true;
-    closeWebView();
+    clearTimer();
+    const wasSilent = modeRef.current === 'silent';
+    setAuthUrl(null);
 
-    if (params.error) {
-      Alert.alert('Sign-in failed', params.error_description || params.error);
+    if (params.error || !params.access_token) {
+      // A silent attempt that needs user interaction just falls back to the
+      // button — no scary alert, that is the expected "session expired" path.
+      if (wasSilent) { setModeBoth('idle'); return true; }
+      Alert.alert('Sign-in failed', params.error_description || params.error || 'No access token.');
+      setModeBoth('idle');
       return true;
     }
     if (params.state !== csrfRef.current) {
+      if (wasSilent) { setModeBoth('idle'); return true; }
       Alert.alert('Sign-in failed', 'Security check failed (state mismatch). Please try again.');
-      return true;
-    }
-    if (!params.access_token) {
-      Alert.alert('Sign-in failed', 'No access token in redirect.');
+      setModeBoth('idle');
       return true;
     }
 
@@ -97,23 +136,44 @@ export default function SignInScreen({ navigation }) {
       accessToken: params.access_token,
       expiresIn: parseInt(params.expires_in || '3600', 10),
     });
+    await setHasSignedIn();
     navigation.replace('Home');
     return true;
   };
 
-  // Block any navigation that leaves the web (e.g. the bridge page trying to
-  // open exp:// — that is what used to pop the "open with mail app" chooser).
+  // Block any navigation that leaves the web (e.g. a stray exp:// redirect that
+  // used to pop the "open with mail app" chooser).
   const onShouldStart = (req) => {
     const url = req.url || '';
-    if (url.indexOf(OAUTH_HTTPS_REDIRECT) === 0) {
-      handleUrl(url);
-      // Let it load so the injected probe can also read the fragment, but the
-      // page's own redirect to exp:// is blocked by the http(s) guard below.
-      return true;
-    }
-    if (!/^https?:/i.test(url)) return false; // no exp://, focusview://, mailto:, etc.
+    if (url.indexOf(OAUTH_HTTPS_REDIRECT) === 0) { handleUrl(url); return true; }
+    if (!/^https?:/i.test(url)) return false;
     return true;
   };
+
+  const webViewProps = {
+    userAgent: BROWSER_UA,
+    injectedJavaScript: TOKEN_PROBE,
+    onShouldStartLoadWithRequest: onShouldStart,
+    onNavigationStateChange: (s) => handleUrl(s.url),
+    onMessage: (e) => handleUrl(e.nativeEvent.data),
+  };
+
+  // Full-screen blocking spinner while we check / silently re-login. The silent
+  // WebView is mounted underneath so it can run, but stays hidden behind this.
+  if (mode === 'checking' || mode === 'silent') {
+    return (
+      <SafeAreaView style={styles.container}>
+        {mode === 'silent' && authUrl ? (
+          <WebView source={{ uri: authUrl }} {...webViewProps} style={styles.hiddenWeb} />
+        ) : null}
+        <View style={styles.center}>
+          <Text style={styles.logo}>focusview</Text>
+          <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
+          <Text style={styles.tagline}>Signing you in…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -123,7 +183,7 @@ export default function SignInScreen({ navigation }) {
           YouTube, sliced into segments you actually care about. No Shorts. No noise.
         </Text>
 
-        <TouchableOpacity style={styles.button} onPress={startSignIn}>
+        <TouchableOpacity style={styles.button} onPress={() => begin(false)}>
           <Text style={styles.buttonText}>Sign in with Google</Text>
         </TouchableOpacity>
 
@@ -132,23 +192,18 @@ export default function SignInScreen({ navigation }) {
         </Text>
       </View>
 
-      <Modal visible={!!authUrl} animationType="slide" onRequestClose={closeWebView}>
+      <Modal visible={mode === 'interactive' && !!authUrl} animationType="slide" onRequestClose={closeAuth}>
         <SafeAreaView style={styles.modal}>
           <View style={styles.modalBar}>
             <Text style={styles.modalTitle}>Sign in with Google</Text>
-            <TouchableOpacity onPress={closeWebView} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <TouchableOpacity onPress={closeAuth} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
               <Text style={styles.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
           {authUrl ? (
             <WebView
               source={{ uri: authUrl }}
-              userAgent={BROWSER_UA}
-              incognito
-              injectedJavaScript={TOKEN_PROBE}
-              onShouldStartLoadWithRequest={onShouldStart}
-              onNavigationStateChange={(s) => handleUrl(s.url)}
-              onMessage={(e) => handleUrl(e.nativeEvent.data)}
+              {...webViewProps}
               startInLoadingState
               renderLoading={() => (
                 <View style={styles.loading}>
@@ -169,6 +224,8 @@ const styles = StyleSheet.create({
     flex: 1, justifyContent: 'center', alignItems: 'center',
     paddingHorizontal: spacing.xl,
   },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  hiddenWeb: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   logo: {
     color: colors.text, fontSize: 42, fontWeight: '800',
     letterSpacing: 2, marginBottom: spacing.md,

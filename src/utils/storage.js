@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SEGMENTS_KEY = 'focusview_segments';
 const TOKEN_KEY = 'focusview_token';
+const SIGNED_IN_KEY = 'focusview_signed_in';
 
 export const getSegments = async () => {
   try {
@@ -56,4 +57,14 @@ export const getToken = async () => {
 
 export const clearToken = async () => {
   await AsyncStorage.removeItem(TOKEN_KEY);
+};
+
+export const setHasSignedIn = async () => {
+  await AsyncStorage.setItem(SIGNED_IN_KEY, '1');
+};
+
+export const getHasSignedIn = async () => {
+  try {
+    return (await AsyncStorage.getItem(SIGNED_IN_KEY)) === '1';
+  } catch { return false; }
 };
