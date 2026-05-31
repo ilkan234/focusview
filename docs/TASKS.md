@@ -1,8 +1,17 @@
 # focusview — Görev Takibi
 
-> Son güncelleme: 2026-05-19 (3. tur)
+> Son güncelleme: 2026-05-31 (6. tur)
 
 ## Yapıldı
+
+### 6. tur (2026-05-31) — Uygulama içi WebView OAuth + sessiz giriş + segment yönetimi
+- [x] **OAuth'u uygulama içi WebView'e taşı** ([SignInScreen.js](../src/screens/SignInScreen.js)) — Custom Tabs + GitHub Pages bridge + deep-link terkedildi. Expo Go'da hesap seçiminden sonra `exp://` deep-link'i Android'de "mail uygulamasıyla aç" seçicisini açıp girişi düşürüyordu. Artık token doğrudan redirect URL fragment'ından, uygulamadan çıkmadan okunuyor.
+- [x] **`disallowed_useragent` bypass** — WebView UA'sından `; wv` etiketi çıkarıldı (`BROWSER_UA`), Google embedded WebView'ı normal tarayıcı sayıyor.
+- [x] **Token fragment'ı injected JS ile okunuyor** — Android nav event'leri `#` kısmını sildiği için sayfaya prob enjekte edilip `onMessage` ile token geri yollanıyor; `onShouldStartLoadWithRequest` http(s) dışı tüm navigasyonları bloklayarak stray `exp://` redirect'inin seçici açmasını engelliyor.
+- [x] **Sessiz oto-yeniden giriş** — `storage.setHasSignedIn`/`getHasSignedIn` bayrağı; açılışta gizli WebView `prompt=none` ile token'ı sessizce yeniliyor (~12 sn timeout ile butona fallback). WebView `incognito` değil → Google oturum çerezi kalıcı.
+- [x] **Segment silme UI'ı** ([HomeScreen.js](../src/screens/HomeScreen.js)) — kartta ⋯ butonu / uzun basma → Edit/Delete menüsü, onaylı silme + anında liste güncellemesi.
+- [x] **Segment düzenleme** — `storage.updateSegment` eklendi; [CreateSegmentScreen.js](../src/screens/CreateSegmentScreen.js) `route.params.segment` ile düzenleme moduna geçiyor.
+- [x] **Native YouTube oynatıcı** ([VideoPlayerScreen.js](../src/screens/VideoPlayerScreen.js)) — WebView embed yerine `react-native-youtube-iframe`.
 
 ### Temel Altyapı
 - [x] Expo + React Native projesi kurulumu
@@ -72,8 +81,9 @@
 ## Bilinen Sınırlamalar — İleride Yapılacaklar
 
 ### Auth
-- [ ] **Refresh token desteği** — şu an implicit flow, access token ~1 saat sonra ölüyor. PKCE/code flow'a geçilirse refresh token saklanıp sessizce yenilenebilir.
-- [ ] **Home'da "Sign out" butonu** — şu an çıkış yapmanın UI yolu yok; sadece `AuthError`'da otomatik clear oluyor.
+- [x] **Sessiz yeniden giriş** (6. tur) — implicit flow token ~1 saatte ölüyor ama açılışta gizli WebView `prompt=none` ile sessizce yeniliyor; kullanıcı tekrar giriş yapmıyor.
+- [ ] **Refresh token desteği** — kalıcı çözüm için PKCE/code flow'a geçip refresh token saklamak. (Sessiz yeniden giriş çoğu durumu kapatıyor; bu artık düşük öncelik.)
+- [ ] **Home'da "Sign out" butonu** — şu an çıkış yapmanın UI yolu yok; sadece `AuthError`'da otomatik clear oluyor. (Not: `focusview_signed_in` bayrağı da temizlenmeli.)
 
 ### Feed
 - [ ] **Sayfalama** — şu an her segment için ilk N kanalın son 10 videosu, daha fazlasına "Load more" eklenebilir.
@@ -83,12 +93,12 @@
 - [ ] **Açıklama uzunluğu** — videolar `description`'ı uzun olduğu için anahtar kelime başka bağlamda yanlış eşleşebiliyor. Sadece başlıkta arama opsiyonu eklenebilir.
 
 ### Home / Segment Yönetimi
-- [ ] **Segment silme UI'ı** — `storage.deleteSegment` zaten var, sadece HomeScreen'de uzun basma veya swipe-to-delete bağlanmadı.
-- [ ] **Segment düzenleme** — keyword ekle/çıkar mevcut bir segment için.
+- [x] **Segment silme UI'ı** (6. tur) — HomeScreen'de ⋯ / uzun basma → onaylı silme.
+- [x] **Segment düzenleme** (6. tur) — CreateSegmentScreen düzenleme modu + `storage.updateSegment`.
 - [ ] **Segment sıralama / sürükle-bırak**.
 
 ### Oynatıcı
-- [ ] **Native YouTube oynatıcı** (`react-native-youtube-iframe`) — WebView yerine, daha iyi tam ekran ve playback kontrolü.
+- [x] **Native YouTube oynatıcı** (`react-native-youtube-iframe`) — WebView embed yerine geçildi (6. tur).
 - [ ] **Picture-in-picture** desteği.
 - [ ] **İzlendi olarak işaretle** — izlenenler gri yapılabilir (lokal state, YouTube history'sini güncellemiyoruz).
 

@@ -5,10 +5,10 @@
 
 ## Teknoloji
 - **React Native + Expo** (managed workflow, `expo: ~54`)
-- **expo-auth-session** + **expo-web-browser** — Google OAuth (YouTube readonly scope)
+- **react-native-webview** — uygulama içi Google OAuth (YouTube readonly scope); dış tarayıcı/deep-link köprüsü kullanılmıyor
 - **@react-navigation/stack** — ekranlar arası navigasyon
 - **@react-native-async-storage/async-storage** — segmentler ve OAuth token kalıcılığı
-- **react-native-webview** — YouTube embed oynatıcı
+- **react-native-youtube-iframe** — YouTube oynatıcı (eski WebView embed yerine)
 
 ## Mimari
 
@@ -23,11 +23,11 @@ focusview/
 │   │   ├── storage.js                  # Segment + token CRUD (AsyncStorage)
 │   │   └── youtube.js                  # YouTube Data API v3 istemcisi
 │   └── screens/
-│       ├── SignInScreen.js             # Google OAuth giriş
-│       ├── HomeScreen.js               # Segment listesi (boş durumlu)
-│       ├── CreateSegmentScreen.js      # Yeni segment (isim + keyword chip'leri)
+│       ├── SignInScreen.js             # Uygulama içi WebView OAuth + sessiz oto-yeniden giriş
+│       ├── HomeScreen.js               # Segment listesi (boş durumlu) + ⋯/uzun bas → düzenle/sil
+│       ├── CreateSegmentScreen.js      # Segment oluştur VE düzenle (isim + keyword chip'leri)
 │       ├── SegmentFeedScreen.js        # Segment için filtrelenmiş video listesi
-│       └── VideoPlayerScreen.js        # WebView embed oynatıcı
+│       └── VideoPlayerScreen.js        # react-native-youtube-iframe oynatıcı
 └── docs/
     ├── PROJECT.md                      # (bu dosya)
     └── TASKS.md                        # iş takibi
@@ -35,8 +35,8 @@ focusview/
 
 ## Veri Akışı
 
-1. **Giriş** — `SignInScreen` Google OAuth ile **access token** alır, `storage.saveToken` ile `expiresAt` damgalı saklar.
-2. **Segment oluşturma** — `CreateSegmentScreen` isim + keyword listesi alır, `storage.addSegment` ile kaydeder.
+1. **Giriş** — `SignInScreen` uygulama içi WebView'de Google OAuth (implicit flow) ile **access token** alır, `storage.saveToken` ile `expiresAt` damgalı saklar ve `storage.setHasSignedIn` bayrağını kaydeder. Sonraki açılışlarda gizli bir WebView `prompt=none` ile token'ı sessizce yeniler.
+2. **Segment oluşturma / düzenleme** — `CreateSegmentScreen` isim + keyword listesi alır; `route.params.segment` varsa düzenleme modunda `storage.updateSegment`, yoksa `storage.addSegment` çağırır. `HomeScreen`'de ⋯ menüsü / uzun basma ile düzenleme veya `storage.deleteSegment` tetiklenir.
 3. **Feed yükleme** — `SegmentFeedScreen` çalıştığında:
    - `subscriptions` → kullanıcının abone olduğu kanalları getir (en fazla `MAX_CHANNELS_SCANNED`)
    - `channels?part=contentDetails` → her kanalın `uploads` playlist ID'sini al
@@ -45,12 +45,14 @@ focusview/
    - **Filtre**: süresi `SHORT_MAX_SECONDS` (varsayılan 60s) altındakileri at (Shorts)
    - **Filtre**: başlık/açıklamada en az bir keyword içerenleri tut
    - `publishedAt` desc sırala
-4. **Oynatma** — `VideoPlayerScreen` `youtube.com/embed/{id}?rel=0&modestbranding=1` URL'sini WebView'da açar; `rel=0` ile YouTube'un ilgili videolar paneli kapatılır (filtrelenmemiş içerik sızmasın diye).
+4. **Oynatma** — `VideoPlayerScreen` `react-native-youtube-iframe` ile videoyu oynatır; ilgili videolar paneli kapalı tutulur (filtrelenmemiş içerik sızmasın diye).
 
 ## Token Yönetimi
 - **Implicit flow** kullanılıyor — access token ~1 saat geçerli, refresh token yok.
+- **Sessiz yeniden giriş:** ilk başarılı girişten sonra `focusview_signed_in` bayrağı saklanır. Her açılışta token süresi dolmuşsa `SignInScreen` gizli bir WebView'de `prompt=none` ile yeni token alır — kullanıcı hiçbir şey görmez. WebView `incognito` **değildir**, böylece Google oturum çerezi açılışlar arası korunur.
+- Sessiz deneme başarısız olursa (oturum yok / etkileşim gerek) ~12 sn'lik timeout sonrası sessizce giriş butonuna düşülür.
 - Token süresi dolarsa `youtube.js` `AuthError` fırlatır; `SegmentFeedScreen` `clearToken` çağırıp `SignIn`'e yönlendirir.
-- Refresh token istenirse PKCE/code flow'a geçmek gerekir (TASKS.md'de mevcut).
+- Sonsuz geçerli oturum için PKCE/code flow + refresh token gerekir (TASKS.md'de mevcut).
 
 ## Kota Notu
 YouTube Data API v3 günlük varsayılan kota: **10,000 birim/gün**.
@@ -61,11 +63,11 @@ YouTube Data API v3 günlük varsayılan kota: **10,000 birim/gün**.
 Limitler `src/config.js` üzerinden ayarlanabilir.
 
 ## Konfigürasyon — ÇALIŞTIRMADAN ÖNCE
-1. [src/config.js](../src/config.js) içine **Google Cloud Console**'dan alınan OAuth client ID'lerini yapıştır:
-   - `GOOGLE_WEB_CLIENT_ID` — Expo Go ile geliştirirken (auth proxy)
-   - `GOOGLE_ANDROID_CLIENT_ID` — standalone Android build için
+1. [src/config.js](../src/config.js) içine **Google Cloud Console**'dan alınan değerleri yapıştır:
+   - `GOOGLE_WEB_CLIENT_ID` — OAuth Web client ID
+   - `OAUTH_HTTPS_REDIRECT` — redirect URI; Google Cloud Console'da **yetkili redirect URI** olarak kayıtlı olmalı (uygulama içi WebView token'ı bu URL'in fragment'ından okur)
 2. Aynı Google Cloud projesinde **YouTube Data API v3** etkin olmalı.
-3. `npm run android` veya `expo start` → `a`.
+3. `npx expo start -c` → telefonda Expo Go ile QR okut.
 
 ## Renk Paleti (`src/theme.js`)
 - Arkaplan: `#0F0F0F` (YouTube koyu temasına yakın)
